@@ -1,0 +1,23 @@
+h1 {
+  font-size: 24px;
+  color: #006;
+  border-bottom: 1px solid #039;
+}
+h2 {
+  font-size: 18px;
+  color: #039;
+  border-bottom: 1px solid #039;
+  margin-top: 35px;
+  padding-top: 20px;
+}
+h3 {
+  font-size: 14px;
+  color: #03f;
+  margin-top: 20px;
+  padding-top: 15px;
+}
+
+footer {
+  margin-top: 20px;
+  border-top: 1px solid #006;
+}

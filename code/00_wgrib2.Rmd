@@ -1,0 +1,1159 @@
+---
+title: "メッシュデータ分析"
+output:
+  html_document:
+    theme: cosmo
+    highlight: textmate
+    toc: true
+    toc_float:
+      collapse: false
+    df_print: "tibble"
+    css: site_style.css
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reticulate)
+```
+# GRIB2とは
+気象庁が作ってる膨大なお天気情報。という事。
+
+ - [わかりやすい資料](https://www.wxbc.jp/wp-content/uploads/2018/11/seminar_181109_01.pdf)
+
+<div align="center">
+<img src="../images/wgrib2/00_image.png"  width="70%">
+</div>
+
+
+<div align="center">
+<img src="../images/wgrib2/01_image.png"  width="70%">
+</div>
+
+# GRIB2使い方
+
+ - windowsの場合は[インストーラ](https://ods.n-kishou.co.jp/tech/blog/detail/2869)あり。  
+
+ - linuxの場合は、[このページとか？](http://hydro.iis.u-tokyo.ac.jp/~akira/page/Linux/contents/tool/wgrib2.html)
+ 
+ - 環境汚したくないので、[dockerでubuntu + wgrib2 + jupyter](https://qiita.com/KentoDodo/items/c8f1dc7fb902c07e817e)を入れたい。
+ 下記は、ubuntuベースにwgrib2とjupyter入れるためのDockerfile。  
+ ubuntu-desktopも入れてるけどGUIいらなければ消していい。  
+ 
+ 
+```{r}
+
+# Dockerfile例
+# ベースとするイメージ
+
+# FROM ubuntu
+# 
+# ARG DEBIAN_FRONTEND=noninteractive
+# 
+# MAINTAINER ymdskr
+# 
+# 
+# RUN apt-get update && apt-get install -y wget \
+#     build-essential \
+#     gfortran \
+#     zlib1g-dev
+# 
+# RUN apt-get install -y init \
+#     systemd \
+#     xrdp \
+#     jupyter \ 
+#     ubuntu-desktop
+# 
+# 
+# # Setting for libraries
+# ENV CC gcc
+# ENV FC gfortran
+# 
+# # Download wgrib2
+# RUN cd ~ \
+#     && wget ftp://ftp.cpc.ncep.noaa.gov/wd51we/wgrib2/wgrib2.tgz \
+#     && tar xvzf wgrib2.tgz
+# 
+# # Install wgrib2
+# RUN cd ~/grib2/ \
+#     && make \
+#     && cp wgrib2/wgrib2 /usr/local/bin/wgrib2
+
+
+```
+
+```{r}
+## Dockerfile格納したフォルダに移動してbuild。1時間くらいかかる
+
+# docker build . -t ubuntu/wgrib2 
+```
+
+
+```{r}
+## imageが立ち上がったらrun
+
+# docker run -itd --privileged -p 8889:8888 -p 13389:3389 -v /c/Users/...:/mnt ubuntu/wgrib2 /sbin/init
+```
+
+
+## wgrib2を使うには
+
+Dockerfileを見てわかる通り、  
+Ubuntuにwgrib2をインストールするためには、gccとgfortran及びzlib1g-devがいるので、これらをapt-getを使ってインストールする。
+gccは、build-essentialパッケージに同包されているものを使用する。
+wgrib2のmakefileには、どのコンパイラを使用するかを環境変数CC及びFCから選択する。よって、これらをENVを使用して定義しておく。
+後は、wgrib2をダウンロードしてインストールするだけでOK。
+
+ubuntu desktop入れた場合は、
+
+  - docker run -itd --privileged -p 8889:8888 -p 13389:3389 -v /c/Users/...:/mnt ubuntu/wgrib2 /sbin/init
+  - docker exec -u root -t -i コンテナID /bin/bash でbash起動後、rootのpassを変更
+  - リモートデスクトップでlocalhost:13389でubuntu-desktopが起動する
+ 
+
+
+
+## gribファイル内のデータの概要
+
+
+```{r, echo=T}
+## bashでwgrib2 gribファイルで対象のgribファイルを抽出できる。
+
+# root@95ce4d0c12a0:/mnt/Study/wgrib2/input/MSM/0000# wgrib2 Z__C_RJTD_20190404000000_MSM_GPV_Rjp_Lsurf_FH16-33_grib2.bin
+
+# 1.205:0:d=2019040400:PRMSL:mean sea level:33 hour fcst:
+# 1.206:0:d=2019040400:PRES:surface:33 hour fcst:
+# 1.207:0:d=2019040400:UGRD:10 m above ground:33 hour fcst:
+# 1.208:0:d=2019040400:VGRD:10 m above ground:33 hour fcst:
+# 1.209:0:d=2019040400:TMP:1.5 m above ground:33 hour fcst:
+# 1.210:0:d=2019040400:RH:1.5 m above ground:33 hour fcst:
+# 1.211:0:d=2019040400:LCDC:surface:33 hour fcst:
+# 1.212:0:d=2019040400:MCDC:surface:33 hour fcst:
+# 1.213:0:d=2019040400:HCDC:surface:33 hour fcst:
+# 1.214:0:d=2019040400:TCDC:surface:33 hour fcst:
+# 1.215:0:d=2019040400:APCP:surface:32-33 hour acc fcst:
+# 1.216:0:d=2019040400:DSWRF:surface:32-33 hour ave fcst:
+
+```
+
+ - 各パラメータの意味
+   - 1.216... : 216個のパラメタがあるという事 
+   - PRMSL: 水位レベルの気圧
+   - PRES: 標高含む気圧, pressure
+   - DSWRF: 日射量, solar 
+   - APCP: 降水量
+   - TCDC: total雲量
+   - RH: relative humidity?
+   - TMP: 気温, temperature
+   - UGRD/VGRD: 風速(東西・南北成分)
+
+```{r}
+## 対象のパラメータをもう少し詳しく見たい場合
+## matchで指定
+
+# root@95ce4d0c12a0:/mnt/Study/wgrib2/input/MSM/0000# wgrib2 Z__C_RJTD_20190404000000_MSM_GPV_Rjp_Lsurf_FH16-33_grib2.bin -match "\.189:" -V
+
+
+# 1.189:0:vt=2019040507:surface:31 hour fcst:HCDC High Cloud Cover [%]:
+#     ndata=242905:undef=0:mean=31.0961:min=0:max=100
+#     grid_template=0:winds(N/S):
+#         lat-lon grid:(481 x 505) units 1e-06 input WE:NS output WE:SN res 48
+#         lat 47.600000 to 22.400000 by 0.050000
+#         lon 120.000000 to 150.000000 by 0.062500 #points=242905
+```
+
+ - vt=2019040507:surface:31 hour fcst:  開いた時刻の31時間先
+ - HCDC High Cloud Cover [%]:
+ - ndata=242905 : データの総量
+ - lat-lon grid:(481 x 505) : 緯度方向481, 軽度方向に505　かけたら242905
+ - lat 47.600000 to 22.400000 by 0.050000 : グリッドの範囲と刻み幅
+ 
+ 
+
+## gribファイルからのデータの取り出し
+ 
+```{r}
+## csvデータとして吐き出す
+
+# root@95ce4d0c12a0:/mnt/Study/wgrib2/input/MSM/0000# wgrib2 Z__C_RJTD_20190404000000_MSM_GPV_Rjp_Lsurf_FH16-33_grib2.bin -match "\.189:" -csv HCDC.csv
+
+
+## 書き出したcsvを確認
+# root@95ce4d0c12a0:/mnt/Study/wgrib2/input/MSM/0000# head -n 1 HCDC.csv
+# "2019-04-04 00:00:00","2019-04-05 07:00:00","HCDC","surface",120,22.4,0.292969
+```
+ 
+予報現時点, 予報時刻,	対象パラメータ,	surface?,	経度,	緯度,	値  
+の順番でパラメータが吐き出されていることが分かる。
+
+このMSMは日に8回出力される。  
+実際はこんな操作を都度実施はできないので、自動化する必要がある。  
+
+pythonで使っていこう。  
+
+
+
+
+
+
+# PythonによるGPVデータ処理の基礎
+
+## pythonでのwgrib2の実行
+
+pythonには[subprocessというモジュール](https://qiita.com/tanabe13f/items/8d5e4e5350d217dec8f5)がある。  
+コマンドラインをpython上で実行できる。  
+コマンドライン上でwgrib2を実行したときと同じように、subprocessを経由して実行することができる。  
+
+コマンドの標準出力を取得したい場合には、runメソッドの stdout 引数に subprocess.PIPE を渡す。復帰値のstdout属性で取得できる。  
+標準エラー出力を取得したい場合には、stderr=subprocess.PIPE を指定して、復帰値のstderr属性を参照する。標準エラー出力と標準出力を混ぜて取りたい場合 (2>&1相当) には、stdout=subprocess.PIPE stderr=subprocess.STDOUT と指定して，復帰値のstdout属性を参照すれば良い。
+
+<button type="button" class="btn btn-primary ansBtn"></button>
+
+### wgrib2の実行 {.ans}
+
+```{python}
+import subprocess
+
+rc = subprocess.run("wgrib2 /home/rstudio/foobar/Study/wgrib2/input/MSM/0000/Z__C_RJTD_20190404000000_MSM_GPV_Rjp_Lsurf_FH00-15_grib2.bin",
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True)
+
+for line in rc.stderr.splitlines():
+  print(line)
+for line in rc.stdout.splitlines():
+  print(line)
+```
+
+
+
+## gribファイル内のメタ情報の表示
+
+同じようにさきほどのコマンドライン実行例。
+
+<button type="button" class="btn btn-primary ansBtn"></button>
+
+### メタ情報の表示　{.ans}
+
+```{python}
+wgrib2 = "wgrib2"
+grdir = "/home/rstudio/foobar/Study/wgrib2/input/MSM/0000/"
+grfile = "Z__C_RJTD_20190404000000_MSM_GPV_Rjp_Lsurf_FH00-15_grib2.bin"
+grpath = grdir + grfile 
+
+kwds = '-match "\.183:"'
+
+rc = subprocess.run(f'{wgrib2} -V {kwds} {grpath}',
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True)
+
+for line in rc.stderr.splitlines():
+  print(line)
+for line in rc.stdout.splitlines():
+  print(line)
+```
+
+## (参考) wgrib2のオプション一覧
+
+<button type="button" class="btn btn-primary ansBtn"></button>
+
+### オプション一覧 {.ans}
+
+```{python}
+wgrib2 = "wgrib2"
+
+rc = subprocess.run(f'{wgrib2} -h',
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    universal_newlines=True)
+
+for line in rc.stderr.splitlines():
+  print(line)
+for line in rc.stdout.splitlines():
+  print(line)
+
+```
+
+
+## pygribについて
+
+pythonにはgribファイルを操作する[pygribモジュール](https://qiita.com/kurukuruz/items/6fc0be9efa34a2fd6741)がある。  
+
+※　今後調べて追記
+
+## gribファイルのNetCDFファイルへの変換
+
+pygribは使用せず、wgrib2を使ってgribファイルをnetCDFファイルに変換してから操作を行う方法もある。
+結構処理時間がかかる。  
+
+<button type="button" class="btn btn-primary ansBtn"></button>
+
+
+### NetCDFへの変換　{.ans}
+
+```{python}
+# import os
+# 
+# wgrib2 = "wgrib2"
+# grdir = "/home/rstudio/foobar/Study/wgrib2/input/MSM/0000/"
+# grfile = "Z__C_RJTD_20190404000000_MSM_GPV_Rjp_Lsurf_FH00-15_grib2.bin"
+# grpath = grdir + grfile 
+# 
+# ncdir = "../output/nc"
+# 
+# if not os.path.isdir(ncdir): # NetCDFファイルの置き場がなければ作る
+#   os.makedirs(ncdir)
+# 
+# ncpath = os.path.join(ncdir, grfile) + ".nc" # 変換後のNetCDFファイル名
+# 
+# rc = subprocess.run(f'{wgrib2} {grpath} -netcdf {ncpath}',
+#                     shell=True,
+#                     stdout=subprocess.PIPE,
+#                     stderr=subprocess.PIPE,
+#                     universal_newlines=True)
+# 
+# for line in rc.stderr.splitlines():
+#   print(line)
+# for line in rc.stdout.splitlines():
+#   print(line)
+
+```
+
+
+## NetCDFファイルからの読み込み
+
+作成したNetCDFファイルを読み込む場合、netCDF4というモジュールを使用する。  
+Dataset()関数でDatasetオブジェクトが生成される。
+
+```{python}
+import netCDF4
+
+ds = netCDF4.Dataset("/home/rstudio/foobar/Study/wgrib2/output/nc/Z__C_RJTD_20190404000000_MSM_GPV_Rjp_Lsurf_FH00-15_grib2.bin.nc")
+```
+
+ファイルに格納されているデータ一覧を見るには以下。  
+辞書形式のデータとなっており、キーワードを指定することで、特定のデータ概要を表示させることができる。  
+NetCDFのデータ概要はgribから直接取りだしたデータとは形式が違う点に注意。  
+特にcurrent shape = (16, 505, 481)  
+3次元データになっている。
+
+<button type="button" class="btn btn-primary ansBtn"></button>
+
+### Datasetオブジェクトの操作 {.ans}
+
+```{python}
+ds.variables.keys()
+```
+
+```{python}
+ds.variables['UGRD_10maboveground']
+```
+
+```{python}
+ncdata = ds.variables['UGRD_10maboveground']
+print("データ名", ncdata.long_name)
+print("単位", ncdata.units)
+print("サイズ", ncdata[:].shape)
+print("データ本体\n", ncdata[:])
+```
+
+## データの可視化
+
+GPVデータの取りだし方が把握できた。気象庁メソ数値予報モデルGPVデータから気象の予測データを取りだし分布図を描く。  
+numpyとmatplotlibで描画可能。
+
+```{python, warning=F, message=F}
+import numpy as np
+import matplotlib.pylab as plt # pylabは2次元の分布図を表す
+import matplotlib
+matplotlib.use('AGG')
+
+ncdata = ds.variables['TMP_1D5maboveground']
+dat = ncdata[0, :, :] - 273.15 # celciusに変換
+lat = ds['latitude'][:]
+lon = ds['longitude'][:]
+
+tate = 6 # 図の大きさ
+figtitle = ncdata.long_name + ' [degC]'
+manualscl = True # カラースケールの上限加減を指定したい時に使用
+sclmax = 35.0
+sclmin = 0
+sclint = 0.5 # 色の刻み
+
+if not manualscl:
+  sclmax = round(np.nanmax(np.array(dat)), 1)
+  sclmax = round(np.nanmin(np.array(dat)), 1)
+  sclint = round(((sclmax - sclmin) / 10), 1)
+
+levels = np.arange(sclmin, sclmax + sclint, sclint)
+yoko = tate * (np.max(lon) - np.min(lon))/(np.max(lat) - np.min(lat)) + 2
+fig = plt.figure(num = None, figsize=(yoko, tate))
+plt.axes(facecolor='0.8') # 背景灰色
+
+cmap = plt.cm.Spectral_r # カラーマップ _rで反転
+cmap.set_over('w', 1.0)
+cmap.set_under('k', 1.0)
+
+CF = plt.contourf(lon, lat, dat, levels, cmap=cmap, extend='both')
+plt.colorbar(CF)
+plt.title(figtitle)
+plt.savefig("/home/rstudio/foobar/Study/wgrib2/output/images/temp/img_00.png")
+```
+
+
+<div align="center">
+<img src="../output/images/temp/img_00.png"  width="70%">
+</div>
+
+
+```{python}
+# 画像を元にアニメーション
+# import numpy as np
+# import matplotlib.pylab as plt # pylabは2次元の分布図を表す
+# import matplotlib.animation as animation
+# from matplotlib.animation import FuncAnimation
+# import datetime 
+# 
+# dt_utc_aware = datetime.datetime.fromtimestamp(0, datetime.timezone.utc)
+# 
+# for i in range(0, 16, 1):
+#   print(i)
+#   ncdata = ds.variables['TMP_1D5maboveground']
+#   dat = ncdata[i, :, :] - 273.15 # celciusに変換
+#   lat = ds['latitude'][:]
+#   lon = ds['longitude'][:]
+#   time = dt_utc_aware + datetime.timedelta(seconds=float(ds['time'][i].data))
+#   
+#   tate = 6 # 図の大きさ
+#   figtitle = ncdata.long_name + ' [degC]'
+#   manualscl = True # カラースケールの上限加減を指定したい時に使用
+#   sclmax = 35.0
+#   sclmin = 0
+#   sclint = 0.5 # 色の刻み
+#   
+#   if not manualscl:
+#     sclmax = round(np.nanmax(np.array(dat)), 1)
+#     sclmax = round(np.nanmin(np.array(dat)), 1)
+#     sclint = round(((sclmax - sclmin) / 10), 1)
+#     
+#   levels = np.arange(sclmin, sclmax + sclint, sclint)
+#   yoko = tate * (np.max(lon) - np.min(lon))/(np.max(lat) - np.min(lat)) + 2
+#   fig = plt.figure(num = None, figsize=(yoko, tate)) 
+#   plt.axes(facecolor='0.8') # 背景灰色
+#   
+#   cmap = plt.cm.Spectral_r # カラーマップ _rで反転
+#   cmap.set_over('w', 1.0)
+#   cmap.set_under('k', 1.0)
+#     
+#   CF = plt.contourf(lon, lat, dat, levels, cmap=cmap, extend='both')
+#   plt.colorbar(CF)
+#   plt.title(figtitle + " : " + str(time))
+#   
+#   if len(str(i)) == 1:
+#     plt.savefig("/home/rstudio/foobar/Study/wgrib2/output/images/img_0" + str(i) + ".png")
+#   else:
+#     plt.savefig("/home/rstudio/foobar/Study/wgrib2/output/images/img_" + str(i) + ".png")
+  
+```
+
+
+
+```{python, include=F}
+# from PIL import Image
+# import glob
+# import pprint
+# 
+# files = sorted(glob.glob('/home/rstudio/foobar/Study/wgrib2/output/images/*.png'))  
+# pprint.pprint(files)
+#     
+# images = list(map(lambda file : Image.open(file) , files))
+# images[0].save('/home/rstudio/foobar/Study/wgrib2/output/images/anime.gif', save_all=True, \
+#     append_images=images[1:], optimize=True, duration=500 , loop=0)
+```
+
+<div align="center">
+<img src="../output/images/anime.gif"  width="70%">
+</div>
+
+
+# wxbcgribを用いたGPVデータの処理
+wxbcgribはgribデータを取り扱う際の定型的な処理をひとまとめにして、気象庁のGPVデータを少ない工数で利用できるようにしたモジュール。  
+以下の操作を簡単に実行できる。
+
+ - gribからのデータの読み出し（NetCDFファイル経由）
+ - グリッドの切り出し
+ - 任意の時刻における気象分布の切り出し
+ - 任意の緯度経度における気象時系列の切り出し
+ 
+（だたし、アスタリスクを付したプロダクトについては気象要素名に[disc]、単位に[unit]が取得される不具合がある。）また、高解像度降水ナウキャストについては、ファイル内に複数の領域データが混在しているため、処理すべき領域のデータだけからなるgribファイル化、NetCDFファイルを作成しておく必要がある。
+
+ - 全球数値予報モデルＧＰＶ (ＧＳＭ全球・日本域)
+ - メソ数値予報モデルＧＰＶ (ＭＳＭ)
+ - 局地数値予報モデルＧＰＶ (ＬＦＭ)
+ - 推計気象分布
+ - メソアンサンブル予報システム（ＭＥＰＳ）ＧＰＶ
+ - 毎時大気解析
+ - 波浪モデルGPV
+ - １kmメッシュ解析雨量／降水短時間予報ＧＰＶ*
+ - 降水ナウキャスト*
+ - 土壌雨量指数*
+ - 大雨警報(浸水害)・洪水警報の危険度分布（統合版）*
+ - 高解像度降水ナウキャスト*
+ 
+ 
+
+使用するには以下の追加モジュールも必要。
+ 
+ - basemap
+ - basemap-data-hired 
+ 
+
+```{python}
+# 設定にかなり苦労した
+# https://www.fixes.pub/program/229626.html
+# cartopy 沿岸線を埋め込むモジュールはinstallにてこずる。
+# python3.6でないと動かない、など注意点多数。
+# python3-dev libproj-dev proj-data proj-bin libgeos-dev この辺はdockerfileで設定しておいた方が良さそう。
+import wxbcgrib as wg
+
+```
+<button type="button" class="btn btn-primary ansBtn"></button>
+
+### wxbcgrib中身 {.ans}
+
+```{python}
+# -*- coding: utf-8 -*-
+# """
+# 本スクリプトはWXBC人材育成WGの有志がテクノロジー研修「メッシュ気象データ分析チャ
+# レンジ！」のために作成したものですが、今般、オープンソース「MITライセンス」とし
+# て公開します。MITライセンスのルールに則りご利用いただき、ブラッシュアップしてい
+# ただけることを祈念しています。
+# 
+# 
+# The MIT License
+# Copyright 2021 気象ビジネス推進コンソーシアム
+# 
+# 　以下に定める条件に従い、本ソフトウェアおよび関連文書のファイル（以下「ソフトウ
+# ェア」）の複製を取得するすべての人に対し、ソフトウェアを無制限に扱 うことを無償
+# で許可します。これには、ソフトウェアの複製を使用、複写、変更、結合、掲載、頒布、
+# サブライセンス、および/または販売する権利、および ソフトウェアを提供する相手に同
+# じことを許可する権利も無制限に含まれます。
+# 　ただし、上記の著作権表示および本許諾表示を、ソフトウェアのすべての複製または重
+# 要な部分に記載するものとします。
+# 
+# 　ソフトウェアは「現状のまま」で、明示であるか暗黙であるかを問わず、何らの保証も
+# なく提供されます。ここでいう保証とは、商品性、特定の目的への適合性、および権利非
+# 侵害についての保証も含みますが、それに限定されるものではありません。 作者または
+# 著作権者は、契約行為、不法行為、またはそれ以外であろうと、ソフトウェアに起因また
+# は関連し、あるいはソフトウェアの使用また はその他の扱いによって生じる一切の請求、
+# 損害、その他の義務について何らの 責任も負わないものとします。
+# """
+# 
+# 
+# import numpy as np  # 多次元配列計算用モジュール
+# import netCDF4 as nc  #NetCDFファイル操作のためのモジュール
+# import os            # ファイルやディレクトリの操作をするモジュール
+# import subprocess     # コマンドラインプログラムを実行させるモジュール
+# from datetime import datetime as dt   # 日付と時刻を示すdatetimeオブジェクトをを利用するためのモジュール
+# from datetime import timedelta as td   # 時間間隔を表現するtimedeltaオブジェクトを利用するためのモジュール
+# import scipy.interpolate as ip   # 補間を行うモジュール
+# import glob                      # ファイルやディレククトリの探索を行うモジュール
+# #import matplotlib
+# #matplotlib.use("Agg")
+# import matplotlib.pyplot as plt      # 描画を行うモジュール
+# import matplotlib.cm as cm          # 描画を行うモジュール
+# 
+# #from mpl_toolkits.basemap import Basemap # 図中に海岸線を埋め込むモジュール
+# #メソッドyx()実行時に「KeyError:'PROJ_LIB'」というエラーが出る場合は、以下のコメントを外し、あなたのユーザー名を指定場所に書いてください。
+# #os.environ['PROJ_LIB'] = r'C:/Users/（ユーザ名）/anaconda3/Library/share'
+# 
+# import cartopy.crs as ccrs  # 図中に海岸線を埋め込むモジュール
+# 
+# 
+# # WGRIB2の実行ファイルのを置くディレクトリを以下で指定
+# wgrib2 = "wgrib2"
+# 
+# # wgrib2 = "C:/wgrib2/wgrib2"   # Windowsの場合
+# #wgrib2 = "~/work/grib2/wgrib2/"    # Macの場合
+# 
+# 
+# def nc_path(grpath):
+#     # """GRIBファイルへのパスから、NetCDFファイルへのパスを作る関数"""
+#     ncdir = "./nc"
+#     if not os.path.isdir(ncdir):    #NetCDFファイル置き場がなければ作る
+#         os.makedirs(ncdir)
+#     ncpath = os.path.join(ncdir, os.path.basename(grpath))+".nc"
+#     return ncpath
+# 
+# 
+# def nc_open(grpath):
+#     # """GRIBファイルの中身をNetCDFファイルに変換してそれをオープンする関数"""
+#     ncpath = nc_path(grpath)
+#     if not os.path.isfile(ncpath):    #NetCDFに変換済みか確認
+#         rc = subprocess.run(f'{wgrib2} -netcdf {ncpath} {grpath}', 
+#                             shell=True, 
+#                             check=True,
+#                             stdout=subprocess.PIPE, 
+#                             stderr=subprocess.PIPE, 
+#                             universal_newlines=True)
+# #        for line in rc.stdout.splitlines():
+# #            print('>>> ' + line)
+#     ds = nc.Dataset(ncpath)
+#     return ds
+# 
+# 
+# class Msg:
+#     # """
+#     # gribメッセージのようなもの　以下の属性を持つ
+#     # name:名前(文字列)
+#     # units:単位(文字列)
+#     # _FillValue:無効値(浮動小数)
+#     # time:時刻(datetimeオブジェクト)
+#     # fcst:予報時間(整数(h))
+#     # lats:緯度(1次元浮動小数)
+#     # lons:経度(1次元浮動小数)
+#     # data:データ本体(2次元浮動少数)
+#     # """
+#     def __init__(self):  #Data() で作られると空のオブジェクトを返す
+#         self.tini = None
+#         self.name = None
+#         self.unit = None
+#         self._FillValue = None
+#         self.fcst = None
+#         self.data = None
+#         self.lat = None
+#         self.lon = None
+# 
+#     def __str__(self):
+#         return "".join([
+#                    f"tini={self.tini}:{self.name}:{self.unit}:",
+#                    f"{self.fcst} hour fcst:",
+#                    f"Shape={self.lat.shape[0]}x{self.lon.shape[0]}:",
+#                    f"FillValue={self._FillValue}"])
+# 
+#     def subset(self, lalomima):
+#         # """
+#         # self.dataに格納されているデータを、特定の領域部分だけにトリミングするメソッド
+#         # 緯度下限(南端)、緯度上限(北端)、経度下限(西端)、軽度上限(東端)の４つの
+#         # 数値をこの順でリストにして与える
+#         # """
+#         ilami, ilama = self.idxsubset(self.lat, [lalomima[0],lalomima[1]])
+#         self.lat = self.lat[ilami:ilama+1]
+#         ilomi, iloma = self.idxsubset(self.lon, [lalomima[2],lalomima[3]])
+#         self.lon = self.lon[ilomi:iloma+1]
+#         self.data = self.data[ilami:ilama+1,ilomi:iloma+1]
+# 
+#     @staticmethod
+#     def idxsubset(gri, minmax):
+#         # """端とグリッドが一致すればそのグリッド、一致しなかったら外側のグリッドの番号を返す"""
+#         imin = max(np.where(gri <= min(minmax))[0])
+#         imax = min(np.where(gri >= max(minmax))[0])
+#         return imin,imax
+# 
+# 
+# def msg_from_a_grnc(path,label, lalomima=None):
+#     # """
+#     # NetCDFファイルに変換したGRIBデータから'label'のデータを取り出して Msgオブジェクトのリストとして
+#     # 取り出す関数 (DS_from_grncで使う)
+#     # キーワード引数latlonminmaxに緯度の下限、緯度の上限、軽度の下限、経度の上限をリストで与
+#     # とその範囲でトリミングするしたメッセージを返す
+#     # """
+#     tiniUTC = dt.strptime(os.path.basename(path).split("_")[4], # ファイル名から初期値時刻
+#                        "%Y%m%d%H%M%S")
+#     ncds = nc_open(path)
+#     nclabels = list(set(ncds.variables.keys()) - {"time","latitude","longitude"})
+#     msgs = []
+#     if label in nclabels:
+#         for i in range(len(ncds["time"])):
+#             m = Msg()
+#             m.tini = tiniUTC + td(hours=9)  # ファイル名やGRIBメッセージはUTCだがNetCDFファイルのデータセットはJST
+#             m.name = ncds[label].long_name
+#             m.unit = ncds[label].units
+#             m._FillValue = ncds[label]._FillValue
+#             m.fcst = (dt.fromtimestamp((int)(ncds["time"][i]))
+#                       - m.tini).total_seconds() / 3600.
+#             m.data = ncds[label][i,:,:]
+#             m.lat = ncds["latitude"][:]
+#             m.lon = ncds["longitude"][:]
+#             if lalomima != None:
+#                 m.subset(lalomima)
+#             msgs.append(m)
+#     else:
+#         print("!! ラベルは以下から選択してください:")
+#         for lbl in nclabels:
+#             print(" "*4,lbl)
+#         raise ValueError
+#     nc.Dataset.close(ncds)
+#     return msgs
+# 
+# 
+# def DS_from_grnc(paths,label, lalomima=None):
+#     # """GRIBファイルのデータををNetCDFファイル経由で読み込んでDataSetオブジェクトにする関数"""
+#     msgs = []
+#     if not isinstance(paths,list):
+#         paths = glob.glob(paths)
+#     for path in paths:
+#         #print(path)
+#         msgs = msgs + msg_from_a_grnc(path,label, lalomima)
+#     msgs.sort(key = lambda x: (x.tini,x.fcst))
+#     DS = DataSet(msgs)
+#     return DS
+# 
+# 
+# def msg_from_ndarray(time,lat,lon,data,name,unit="",_FillValue=-99999,tini=None):
+#     # """
+#     # ndarrayから Msgオブジェクトを構成する関数
+#     # 引数は以下の通り
+#     #     time:時刻の並び(datetimeオブジェクト)
+#     #     lat :緯度の並び(浮動小数)
+#     #     lon :経度の並び(浮動小数)
+#     #     data:2次元データ(浮動少数)
+#     #     name:名前(文字列)
+#     #     unit:単位(文字列)
+#     #     _FillValue:無効値(浮動小数)
+#     #     tini:初期時刻(datetimeオブジェクト)
+#     # """
+#     msgs = []
+#     try:
+#         tim = np.array(time)
+#         lat = np.array(lat, dtype=np.float64)
+#         lon = np.array(lon, dtype=np.float64)
+#         dat = np.array(data, dtype=np.float64)
+#     except:
+#         print("Could not convert all data")
+#         raise
+#     data_shape = dat.shape
+#     domain_shape = (tim.shape[0],lat.shape[0],lon.shape[0])
+# #    print(f"data shape: {data_shape}")
+# #    print(f"time/lats/lon shape: {domain_shape}")
+#     if data_shape != domain_shape:
+#         print("Shape mismatch")
+#         raise ValueError
+#     if tini == None:
+#         tini = tim[0]
+#     for i in range(len(tim)):
+#         m = Msg()
+#         m.tini = tini
+#         m.name = name
+#         m.unit = unit
+#         m._FillValue = _FillValue
+#         m.fcst = (tim[i] - tini).total_seconds() / 3600.
+#         m.data = data[i,:,:]
+#         m.lat = lat
+#         m.lon = lon
+#         msgs.append(m)
+#     return msgs
+# 
+# 
+# def DS_from_ndarray(time,lat,lon,data,name,unit="",_FillValue=-99999,tini=None):
+#     # """ndarrayからDataSetオブジェクトを作る関数"""
+#     msgs = msg_from_ndarray(time,lat,lon,data,name,unit,_FillValue,tini)
+#     DS = DataSet(msgs)
+#     return DS
+# 
+# def DS_like(ds, data=None, name=None, unit=None, _FillValue=None):
+#     # """
+#     # 既存のDataSetをコピーするメソッド
+#     # データと単位、無効値は入れ替えることも多いのでオプション引数でうけられるようにしてある
+#     # """
+#     if data is None:
+#         data = ds.data
+#     if name is None:
+#         name = ds.name
+#     if unit is None:
+#         unit = ds.unit
+#     if _FillValue is None:
+#         _FillValue = ds.FillValue
+#     msgs = msg_from_ndarray(ds.time,ds.lat,ds.lon,data,name,unit,_FillValue,None)
+#     DS = DataSet(msgs)
+#     return DS
+# 
+# 
+# 
+# class DataSet:
+#     # """
+#     # Msgオブジェクトを集成して作成したデータセット
+#     # 以下の属性を持つ （ Msgオブジェクトとは同一でない）
+#     #     time:時刻の並び(datetimeオブジェクト)
+#     #     lat :緯度の並び(浮動小数)
+#     #     lon :経度の並び(浮動小数)
+#     #     name:名前(文字列)
+#     #     units:単位(文字列)
+#     #     _FillValue:無効値(浮動小数)
+#     #     time:時刻(datetimeオブジェクト)
+#     #     fcst:予報時間(整数(h))
+#     #     data:データ本体(2次元浮動少数)
+#     # 
+#     # Msgオブジェクトには時刻の参照時刻と予報時間が保存されているが、DataSetオブジェクトにはそれらは
+#     # なく、(初期値であれ予報値であれ)そのデータが指し示す時刻を属性に持つので注意。
+#     # 
+#     # """
+#     def __init__(self,msgs=None):
+#         self.time = None
+#         self.lat = None
+#         self.lon = None
+#         self.data = None
+#         self.name = None
+#         self.unit = None
+#         self._FillValue = None
+#         if msgs:
+#             self.from_msgs(msgs)
+# 
+# 
+#     def from_msgs(self, msgs):
+#         # """
+#         # Msgオブジェクトのリストを固めてDataSetオブジェクトにするメソッド
+#         # 参照時刻と予報時間から、時刻(self.time)を計算する。名称等他の属性は、リストの最初
+#         # のメッセージから取得して与える。参照時刻、予報時間でリストをソートしてから結合する
+#         # """
+#         msgs.sort(key = lambda x: (x.tini,x.fcst))
+#         self.time = np.array([msg.tini + td(0,msg.fcst*3600) for msg in msgs])
+#         self.lat = np.array(msgs[0].lat)
+#         self.lon = np.array(msgs[0].lon)
+#         self.name = msgs[0].name
+#         self.unit = msgs[0].unit
+#         self._FillValue = msgs[0]._FillValue
+#         self.data = np.array([msg.data for msg in msgs])
+# 
+# 
+#     def from_ndarray(self,time,lat,lon,data,name,unit="",_FillValue=-99999,tini=None):
+#         # """
+#         # numpy ndarray で与えられた時刻や緯度経度、データからDataSetオブジェクトを構成するメソッド
+#         # """
+#         msgs = msg_from_ndarray(time,lat,lon,data,name,unit,_FillValue,tini)
+#         self._from_msgs(msgs)
+#  
+#  
+#     def to_msgs(self, tini=None):
+#         # """
+#         # DataSetオブジェクトをバラバラにしたMsgオブジェクトのリストを返すメソッド
+#         # オプション引数tiniが与えられない場合は、最も若い時刻を参照時刻とみなして予報時間を
+#         # 作成する。tiniが与えられた場合は、これに基づいて予報時刻を計算する。
+#         # """
+#         msgs = msg_from_ndarray(self.time,self.lat,self.lon,self.data,
+#                                 self.name,self.unit,self._FillValue,tini)
+#         return msgs
+# 
+# 
+#     def __str__(self):
+#         d = self.data.reshape(-1)
+#         nofi = len(d[d==self._FillValue])
+#         if len(d):
+#             dmin = np.min(d)
+#             davg = np.average(d)
+#             dmax = np.max(d)
+#         else:
+#             dmin = "---"
+#             davg = "---"
+#             dmax = "---"
+#         return "\n".join(
+#             [f"Name: {self.name} Unit: {self.unit}",
+#              f"Time: {self.time[0]} - {self.time[-1]}",
+#              f"Shape: {self.time.shape[0]} x {self.lat.shape[0]} x {self.lon.shape[0]}",
+#              f"Min: {dmin} Avg: {davg} Max: {dmax}",
+#              f"FillVal: {self._FillValue} (# of FillVal: {nofi})"])
+# 
+# 
+#     def lfm(self):
+#         # """
+#         # LFM-GPVと同じグリッドに空間補間された新しいDataSetオブジェクトを作るメソッド
+#         # newds = ds.lfm() のように用いる
+#         # """
+#         lats = np.linspace(22.4,47.6,1261)
+# #        lats = np.linspace(47.6,22.4,1261)
+#         lons = np.linspace(120,150,1201)
+#         return self.yx_interpolate(lats,lons)
+# 
+# 
+#     def tap(self):
+#         # """
+#         # 推計気象分布と同じグリッド(3次メッシュ)に空間補間された新しいDataSetオブジェクトを作るメソッド
+#         # newds = ds.tap() のように用いる
+#         # """
+#         olat = 1/240.0 # 1/2 * (28/33600)
+#         olon = 1/160.0 # 1/2 * (32/2560)
+#         lats = np.linspace(20+olat,48-olat,3360)
+#         lons = np.linspace(118+olon,150-olon,2560)
+#         return self.yx_interpolate(lats,lons)
+# 
+# 
+#     def yx_interpolate(self,newlat,newlon):
+#         # """
+#         # 引数で与えられた緯度経度のグリッドに空間補間された新しいDataSetオブジェクトを作るメソッド
+#         # newds = ds.yx_interpolate(newlat,newlon) のように用いる
+#         # """
+# #       外挿もあり得るのでこれらは使わない
+# #        if max(newlat) > max(self.lat) or min(newlat) < min(self.lat):
+# #            print("!! 指定した緯度がデータセットの範囲外です。")
+# #            raise ValueError
+# #        if max(newlon) > max(self.lon) or min(newlon) < min(self.lon):
+# #            print("!! 指定した経度がデータセットの範囲外です。")
+# #            raise ValueError
+#         newdata = np.zeros((len(self.time),len(newlat),len(newlon)),dtype=np.float32)
+#         for i in range(self.data.shape[0]):
+#             yx = self.data[i,:,:]
+#             f = ip.interp2d(self.lon,self.lat,yx)
+#             newdata[i,:,:] = f(newlon,newlat)
+#         newDS = DS_from_ndarray(self.time,newlat,newlon,newdata,self.name,
+#                                 unit=self.unit,_FillValue=self._FillValue)
+#         return newDS
+# 
+# 
+#     def t_interpolate(self,newtime):
+#         # """
+#         # 引数で与えられた時間間隔に空間補間された新しいDataSetオブジェクトを作るメソッド
+#         # newds = ds.yx_interpolate(newlat,newlon) のように用いる
+#         # """
+#         if max(newtime) > max(self.time) or min(newtime) < min(self.time):
+#             print("!! 指定した時刻がデータセットの範囲外です。")
+#             raise ValueError
+#         if newtime == self.time[0]:
+#             return self
+#         else:
+#             newdata = np.zeros((len(newtime),len(self.lat),len(self.lon)),dtype=np.float32)
+#             ts = [oo.timestamp() for oo in self.time]
+#             newts = [oo.timestamp() for oo in newtime]
+#             for i in range(self.data.shape[1]):
+#                 for j in range(self.data.shape[2]):
+#                     vs = self.data[:,i,j]
+#                     f = ip.interp1d(ts,vs)
+#                     newdata[:,i,j] = f(newts)
+#                     newDS = DS_from_ndarray(newtime,self.lat,self.lon,newdata,self.name,
+#                                             unit=self.unit,_FillValue=self._FillValue)
+#             return newDS
+# 
+# 
+#     def yx(self,time,resolution="i",fig=False,prefix="yx",cmapstr=None, minmax=None):
+#         # """
+#         # 引数で指定した時刻の気象値の分布を2次元配列で出力するメソッド。分布を画像として出力す
+#         # ることもできる。
+#         # 書式：
+#         #     DS.yx(time,fig=False)　　または、　ret = DS.yx(time,fig=False)
+#         # 引数：
+#         #     time：必須。取得したい時刻
+#         #         Python datetimeオブジェクトで指定する。データセットに該当する時刻が無い場合は、
+#         #         前後の時刻から単純内挿する。この際、2段のforループで全ての地点グリッドに対して
+#         #         時間内挿を行うので、グリッド数が多いと処理に時間がかかる。
+#         #     fig：省略可。Trueを与えると、分布図をpngファイルで出力する。デフォルトではFalseが与えられる(すなわち図は作成されない)。
+#         #     resolution:省略可。fig=Trueのとき有効。描画する海岸線の精細度を
+#         #         'c'(粗い),’l’,'i','h','f'(細かい)で指定。精細にすると時間がとてもかかる。
+#         #     prefix：省略可。fig=Trueのとき有効。出力されるファイル名は、デフォルトで
+#         #         「Tyyyy.mm.dd.png」となるが、prefixに文字列を指定すると、その文字列がデフォ
+#         #         ルトファイル名のさらに前に付加される。ここで、yyyy、mm、ddは、順に、年、月、日を
+#         #         示す数字である。なお、ここにパスを書き込めば指定するディレクトリにファイルを配置できる。
+#         # 
+#         #     cmapstr：省略可。値と色との関連付けに付けられた呼称(カラーマップ)を字列で与える。
+#         #         省略された場合は'RdYlGn_r'が与えられる。
+#         #     minmax：省略可。配色の最小値、最大値を[min,max]で与える。
+#         # 戻り値：
+#         #     省略可。指定した時刻分布データを数値として取り出したいときは戻り値で受ける。
+#         # カラーマップについて：
+#         #     カラーマップには名称があるのでこれを文字列で("で囲んで)指定する。
+#         #     例)　レインボーカラー:rainbow、黄色-オレンジ-赤の順で変化:YlOrRdなど
+#         #     色の順序をを反転させたい場合は、rainbow_rのよう名称の後ろに"_r"を付加する。
+#         #     詳細は下記URLを参照。
+#         #     http://matplotlib.org/examples/color/colormaps_reference.html
+#         # """
+#         path = f"{prefix}T{dt.strftime(time,'%Y.%m%d.%H%M')}.png"
+#         it = np.where(self.time == time)
+#         itime = it[0]
+#         if len(itime) == 0:
+#             DS = self.t_interpolate(np.array([time]))
+#             yx = DS.data[0,:,:]
+#         else:
+#             yx = self.data[itime[0],:,:]
+#         if fig:
+#             myx = np.ma.masked_values(yx, self._FillValue)
+#             tate = 6      #図の台紙の全体的な大きさを指定します。
+#             yoko = tate * (np.max(self.lon)-np.min(self.lon))/(np.max(self.lat)-np.min(self.lat)) + 2
+#             plt.figure(figsize=(yoko,tate)) # プロット領域の作成（matplotlib）
+# 
+#             ax = plt.subplot(1,1,1, facecolor='0.8', 
+#                              projection=ccrs.PlateCarree())
+#             ax.set_extent([self.lon[0],self.lon[-1],self.lat[0],self.lat[-1]], ccrs.PlateCarree())
+#             ax.coastlines(lw=0.5)
+#             gl = ax.gridlines(draw_labels=True,lw=5)
+#             gl.top_labels = False
+#             gl.right_labels = False
+# 
+#             if cmapstr is None:
+#                 cmapstr = 'RdYlGn_r'
+#             cmap = eval("cm."+cmapstr)
+#             if minmax is None:
+#                 minmax = [None,None]
+#             cf = ax.pcolormesh(self.lon,self.lat,myx, 
+#                                 vmin=minmax[0], vmax=minmax[1], 
+#                                 cmap=cmap, shading='auto')
+# 
+#             plt.colorbar(cf)
+#             plt.title(f"{self.name} ({self.unit}) {time}")
+#             plt.savefig(path, format='png', dpi=300)
+#             plt.show()
+#             plt.close()
+#         return yx
+# 
+#     def ts(self,lat,lon,fig=False, csv=False, prefix="ts"):
+#         # """
+#         # 引数で指定した緯度経度の気象値の時系列を1次元配列で出力するメソッド。時系列グラフを
+#         # 画像として出力することも可能。
+#         # 書式：
+#         #     DS.ts(time,fig=False)　または、ret = DS.ts(time,fig=False)
+#         # 引数：
+#         # lat：必須。取得したい地点の緯度。十進数で指定する。
+#         # lon：必須。取得したい地点の経度。十進数で指定する。
+#         # fig：省略可。Trueを与えると、時系列折れ線グラフをpngファイルで出力する。
+#         #     デフォルトではFalseが与えられる(すなわち図は作成されない)。
+#         # csv：省略可。Trueを与えると、データをテキストファイルに出力する。デフォルト
+#         #     ではFalseが与えられる(すなわちファイルは出力されない。
+#         # prefix：省略可。fig=Trueのとき有効。出力される画像ファイル名は、
+#         #     デフォルトで「tsNlat-Elon.png」(グラフの場合)、「tsNlat-Elon.csv」となるが、
+#         #     prefixに文字列を指定すると、その文字列がデフォルトファイル名のさらに前に付加される。
+#         #     ここでlat、lonはそれぞれ緯度と経度を示す数字である。
+#         # 戻り値：
+#         #     省略可。指定した時系列データを数値として取り出したいときは戻り値で受ける。
+#         # """
+#         DS = self.yx_interpolate(np.array([lat]),np.array([lon]))
+#         xs = DS.time
+#         ys = DS.data.reshape(-1)
+#         if fig:
+#             path = f"{prefix}N{lat}-E{lon}.png"
+#             plt.figure(figsize=(12, 4)) # figureの縦横の大きさ
+#             plt.subplot(1,1,1)
+#             plt.plot(xs,ys)
+#             plt.title(f"{self.name} ({self.unit}) lat:{lat} lon:{lon}")
+#             plt.savefig(path, format='png', dpi=300)
+#             plt.show()
+#             plt.close()
+#         if csv:
+#             path = f"{prefix}N{lat}-E{lon}.csv"
+#             with open(path, "w") as f:
+#                 print('time'+", "+f'{self.name}', file=f)
+#                 for i in range(len(xs)):
+#                     print(dt.strftime(xs[i],'%Y/%m/%d %H:%M:%S')+", "
+#                           '{:.2f}'.format(ys[i]), file=f)
+#         return ys
+# 
+# 
+#     def ql(self,itime=0,cmapstr=None, minmax=None):
+#         # """
+#         # DataSetオブジェクトの最初の時刻の様子を手っ取り早く表示させるメソッド。DataSetオブジェクト
+#         # のサイズ等も表示する。
+#         # 引数に整数を与えるとその整数に対応する時刻の分布図を示す。最初は0、最後は-1。
+#         # cmapstr：省略可。値と色との関連付けに付けられた呼称文字列を与える。省略された
+#         #     場合は'RdYlGn_r'が与えられる。
+#         # minmax：省略可。配色の最小値を要素2のリストで与える。
+#         # """
+#         dat = np.ma.masked_values(self.data[itime,:,:], self._FillValue)
+#         tate = 6      #図の台紙の全体的な大きさを指定します。
+#         yoko = tate * (np.max(self.lon)-np.min(self.lon))/(np.max(self.lat)-np.min(self.lat)) + 2
+#         plt.figure(figsize=(yoko,tate)) # プロット領域の作成（matplotlib）
+#         ax = plt.subplot(1,1,1, facecolor='0.8')
+#         if cmapstr is None:
+#             cmapstr = 'RdYlGn_r'
+#         cmap = eval("cm."+cmapstr)
+#         if minmax is None:
+#             minmax = [None,None]
+#         cf = ax.imshow(dat, cmap=cmap, origin='lower', aspect='equal',
+#                           vmin=minmax[0], vmax=minmax[1])
+#         plt.colorbar(cf)
+#         plt.title(f"{self.name} ({self.unit}) {self.time[itime]}")
+#         plt.show()
+#         plt.close()
+# 
+#         d1 = np.array(dat).reshape(-1)
+#         nofi = len(d1[d1==self._FillValue])
+#         print("\n".join(
+#             [f"Name: {self.name} Unit: {self.unit}",
+#              f"Time: {self.time[itime]}",
+#              f"lat: {self.lat[0]} - {self.lat[-1]}  ({self.lat[1]-self.lat[0]})",
+#              f"lon: {self.lon[0]} - {self.lon[-1]}  ({self.lon[1]-self.lon[0]})",
+#              f"Shape: {self.time.shape[0]} x {self.lat.shape[0]} x {self.lon.shape[0]}",
+#              f"FillVal: {self._FillValue} (# of FillVal: {nofi})"]))
+
+```
+
+
+## GPVデータの読み込み
+
+"Z__C_RJTD_20190404000000_MSM_GPV_Rjp_Lsurf_FH00-15_grib2.bin"  
+このファイル名の、20190404000000は、"2019年4月4日00:00:00UTC"を初期値とするMSM GPVファイル。  
+
+
+```{python}
+wgrib2 = "wgrib2"
+grdir = "/home/rstudio/foobar/Study/wgrib2/input/MSM/0000/"
+grfile = "Z__C_RJTD_20190404000000_MSM_GPV_Rjp_Lsurf_FH00-15_grib2.bin"
+grpath = grdir + grfile 
+
+# 第2引数に適当な文字列を入れれば、対象のgribファイルの変数リストを返してくれる。
+var = wg.DS_from_grnc(grpath, "TMP_1D5aboveground")
+```
+
+
+
+wg.DS_from_grncは、キーワード引数lalomimaを加えることで、データの読み込む領域を指定することができる。
+
+```{python}
+# var = wg.DS_from_grnc(grpath, "PRES_surface", lalomina=[緯度下限, 緯度上限, 経度下限, 経度上限])
+```
+
+## 読み込みデータの確認
+
+返されるオブジェクト（この場合var）は特殊な形式の変数で、以下の7種類のデータが格納されている。
+
+ - 気象要素の名称 name
+ - 気象要素の単位 unit
+ - 無効を示す数値 _FillValue
+ - データ本体 data
+ - 時刻 time
+ - 緯度 lat
+ - 経度 lon
+ 
+ 各要素を取りだすには、上記の名称をメソッドとして実行
+```{python}
+var.time
+```
+ 
+```{python}
+# 図示するにはql()メソッド
+var.ql()
+```
+ 
+
+
+## グリッドの切り直し（リグリッド）
+
+GPVデータはそれぞれに異なったグリッドサイズと範囲で作られているので、相互に比較したり演算したりするためには、グリッドを一致させる必要がある。  
+
+
+## 任意の時刻における気象分布の切り出し
+
+
+## 任意の緯度経度における気象時系列の切り出し
+
+
+## 複数のGRIBファイルで構成されるGPVデータの読み込み
+
+
+## DataSetオブジェクト間の演算
+
+
+```{js, echo=F}
+$(function(){
+  $(".ans").hide();
+  $(".ansBtn").text("表示");
+  $(".ansBtn").click(function(){
+    var index = $(".ansBtn").index(this);
+    if($(".ans").eq(index).is(":visible")){
+      $(".ans").eq(index).hide();
+      $(".ansBtn").eq(index).text("表示");
+    }else{
+      $(".ans").eq(index).show();
+      $(".ansBtn").eq(index).text("非表示");
+    };
+  });
+});
+```

@@ -1265,8 +1265,8 @@ grfile = "Z__C_RJTD_20190404000000_MSM_GPV_Rjp_Lsurf_FH16-33_grib2.bin"
 grpath = grdir + grfile
 
 # 東西と南北の風速から、風速絶対値を求める
-var_u = wg.DS_from_grnc(grpath, "UGRD_10maboveground")
-var_v = wg.DS_from_grnc(grpath, "VGRD_10maboveground")
+var_u = wg.DS_from_grnc(grpath, "UGRD_10maboveground", lalomima=[35., 36.5, 139.6, 141.2])
+var_v = wg.DS_from_grnc(grpath, "VGRD_10maboveground", lalomima=[35., 36.5, 139.6, 141.2])
 
 u_value = var_u.data
 u_filval = var_u._FillValue
@@ -1285,8 +1285,37 @@ u_v_filval = (u_filval**2 + v_filval**2)**0.5
 win_spd = wg.DS_like(var_u, data=u_v_value, name="wind_spd", unit="m/s", _FillValue=u_v_filval)
 
 win_spd.ts(35, 135, fig=True)
-win_spd.yx(win_spd.time[0], fig=True)
+win_spd.yx(win_spd.time[2], fig=True)
 ```
+
+
+
+
+```{python}
+# import wxbcgrib
+# 
+# win_spd = wg.DS_like(var_u, data=u_v_value, name="wind_spd", unit="m/s", _FillValue=u_v_filval)
+# 
+# # win_spd.ts(35, 135, fig=True)
+# # アニメーションにしてみる
+# for i in range(len(win_spd.time)):
+#   win_spd.yx(win_spd.time[i], fig=True, minmax=[0, 25])
+```
+
+
+```{python}
+# files = sorted(glob.glob('/home/rstudio/foobar/Study/wgrib2/code/*.png'))
+# pprint.pprint(files)
+# 
+# images = list(map(lambda file : Image.open(file) , files))
+# images[0].save('/home/rstudio/foobar/Study/wgrib2/output/images/anime_wind.gif', save_all=True, \
+#     append_images=images[1:], optimize=True, duration=500 , loop=0)
+
+```
+<div align="center">
+<img src="../output/images/anime_wind.gif"  width="70%">
+</div>
+
 
 
 

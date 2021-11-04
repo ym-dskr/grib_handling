@@ -458,7 +458,7 @@ class DataSet:
             if minmax is None:
                 minmax = [None,None]
             cf = ax.pcolormesh(self.lon,self.lat,myx, 
-                                vmin=minmax[0], vmax=minmax[1], 
+                                vmin=minmax[0], vmax=minmax[1],
                                 cmap=cmap, shading='auto')
 
             plt.colorbar(cf)
